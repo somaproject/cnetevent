@@ -1,0 +1,13 @@
+Source: soma-cnetevent
+Section: unknown
+Priority: extra
+Maintainer: slayton <slayton@stockton-mini>
+Build-Depends: debhelper (>= 7), autotools-dev
+Standards-Version: 3.7.3
+Homepage: http://soma.mit.edu
+
+Package: soma-cnetevent
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Soma network library written in C
+ <insert long description, indented with spaces>
