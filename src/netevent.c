@@ -169,35 +169,12 @@ NetEvent_startEventRX(NetEventHandle * nh)
 {
   int i = 0; 
   // build the constant-time LUT
-  //bzero(nh->pnss->rxValidLUT, 256*256); 
-  
-  /* while ((item = PyIter_Next(iterator)) != 0) { */
-/*     /\* do something with item *\/ */
-/*     // get tuple */
-/*     if (PyTuple_Check(item)) { */
-/*       //int ts = PyTuple_Size(item);  */
-/*       //assert(ts == 2);  */
-      
-/*       PyObject* popcmd = PyTuple_GetItem(item, 0);  */
-/*       long cmd = PyInt_AsLong(popcmd);  */
-      
-/*       PyObject* popsrc = PyTuple_GetItem(item, 1);  */
-/*       long src = PyInt_AsLong(popsrc);  */
-
   // copy from network handle
    for (i = 0; i < 256 * 256; i++) {
     //nh->pnss->rxValidLUT[cmd + src*256] = 1; 
     nh->pnss->rxValidLUT[i] = nh->rxValidLUT[i]; 
   }
   
-  /*   } else { */
-/*       // error */
-/*       Py_RETURN_NONE;  */
-/*     } */
-/*     /\* release reference when done *\/ */
-/*     Py_DECREF(item); */
-/*   } */
-
   // now we fork a thread and begin queueing up events
 
   pthread_create((void*)&(nh->pNetworkThread), NULL, 
@@ -325,24 +302,7 @@ NetEvent_sendEvent(NetEventHandle * nh, struct event_t * e, uint8_t *  addrs)
      addrs is a pointer to a uint8[10] array of event addresses
      
      return ESENDERROR on failure, 0 otherwise
-     
   */
-
-
-/*   struct event_t e;  */
-/*   uint8_t addrs[10];  */
-/*   int ok = PyArg_ParseTuple(args, "(BBBBBBBBBB)(BBHHHHH)", */
-/* 			    &addrs[1], &addrs[0], */
-/* 			    &addrs[3], &addrs[2],   */
-/* 			    &addrs[5], &addrs[4],  */
-/* 			    &addrs[7], &addrs[6],  */
-/* 			    &addrs[9], &addrs[8],  */
-/* 			    &e.cmd, &e.src,  */
-/* 			    &e.data[0], &e.data[1], &e.data[2],  */
-/* 			    &e.data[3], &e.data[4]);  */
-  
-/*   if (!ok)  */
-/*     return NULL;  */
 
   struct sockaddr_in saServer; 
   
@@ -417,11 +377,11 @@ NetEvent_sendEvent(NetEventHandle * nh, struct event_t * e, uint8_t *  addrs)
     int retval = select(sock+1, &readfds, NULL, NULL,  &timeout); 
 
     if (retval == -1) { 
-      //PyErr_SetString(PyExc_IOError, "Error in select waiting for EventTX response from soma"); 
+      // Error in select waiting for EventTX response from soma
       return NETEVENT_ESENDERROR; 
     } else if (retval == 0) {
-      //PyErr_SetString(PyExc_IOError, "Timed out waiting for EventTX response from soma");       
-      return NETEVENT_ESENDERROR; 
+      // Timed out waiting for EventTX response from soma
+      return NETEVENT_ESENDERROR_TIMEOUT; 
     }
 
     int rxlen = recv(sock, buffer, 1500, 0); 

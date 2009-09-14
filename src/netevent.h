@@ -31,6 +31,7 @@ static const int EVENTRXPORT = 5000;
 #define NETEVENT_SUCCESS 0
 #define NETEVENT_EGETEVENTS -1
 #define NETEVENT_ESENDERROR -2
+#define NETEVENT_ESENDERROR_TIMEOUT -3
 
 struct  event_t
 {
