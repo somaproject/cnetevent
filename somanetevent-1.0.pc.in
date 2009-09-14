@@ -1,11 +1,6 @@
-prefix=@prefix@
-exec_prefix=@exec_prefix@
-libdir=@libdir@
-includedir=@includedir@
-
 Name: somanetevent
-Description: Soma Network Event c library
+Description: Soma Network Event c-based library
 Requires: 
-Version: @VERSION@
-Libs: -L${libdir} -lsomanetevent-1.0
-Cflags: -I${includedir}/somanetevent-1.0 -I${libdir}/somanetevent-1.0/include
+Version: ${LIBRARY_VERSION}
+Libs: -L${CMAKE_INSTALL_PREFIX}/lib/ -l${PROJECT_NAME}
+Cflags: -I${CMAKE_INSTALL_PREFIX}/include/somanetevent-1.0 
