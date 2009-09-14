@@ -1,6 +1,5 @@
-#ifndef NETEVENT_H
-#define NETEVENT_H
-//#include "structmember.h"
+#ifndef __SOMA_NETEVENT_H__
+#define __SOMA_NETEVENT_H__
 #include <pthread.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -26,73 +25,74 @@ static const int EVENTTXPORT = 5100; // events from software to the soma bus
 
 static const int EVENTRXPORT = 5000; 
 
-#define EVENTLEN 6
-
+// define the errors
 #define NETEVENT_SUCCESS 0
 #define NETEVENT_EGETEVENTS -1
 #define NETEVENT_ESENDERROR -2
 #define NETEVENT_ESENDERROR_TIMEOUT -3
 
-struct  event_t
+
+#define EVENTLEN 6
+struct  NetEvent_event_t
 {
   unsigned char cmd; 
   unsigned char src; 
   uint16_t data[EVENTLEN-1]; 
-} ; 
+}; 
 
-struct eventListItem_t; 
+struct NetEvent_eventListItem_t; 
 
-struct  eventListItem_t
+struct NetEvent_eventListItem_t
 {
-  struct event_t e; 
-  struct eventListItem_t * elt; 
+  struct NetEvent_event_t e; 
+  struct NetEvent_eventListItem_t * elt; 
 }; 
 
 
-struct EventList_t
+struct NetEvent_EventList_t
 {
-  struct eventListItem_t * eltHead; 
-  struct eventListItem_t * eltTail; 
+  struct NetEvent_eventListItem_t * eltHead; 
+  struct NetEvent_eventListItem_t * eltTail; 
   pthread_mutex_t mutex;
   pthread_mutex_t size_mutex; 
   pthread_cond_t size_thold_cv; 
   int size; 
 } ; 
 
-struct NetworkSharedThreadState_t
+struct NetEvent_NetworkSharedThreadState_t
 {
-  struct EventList_t * pel; 
+  struct NetEvent_EventList_t * pel; 
   pthread_mutex_t running_mutex;
   int running; 
   char * rxValidLUT; 
 }  ; 
 
-typedef struct {
-  //  PyObject *rxSet; /* RX set list */ 
-  //PyObject *ip; /* Soma device IP address */ 
+#define IPLEN 100
+
+struct NetEvent_Handle { 
   int number;
-  struct NetworkSharedThreadState_t * pnss; 
+  struct NetEvent_NetworkSharedThreadState_t * pnss; 
   pthread_t * pNetworkThread; 
   int txsocket; 
-  char * ip; 
+  char ip[IPLEN];
   char * rxValidLUT; 
-} NetEventHandle;
+} ; 
 
 int setupRXSocket(void); 
-uint32_t getEvents(int sock, char * rxValidLUT, 
-		   struct EventList_t * eventlist); 
 
-NetEventHandle * NetEvent_new(char * addrstr); 
-void NetEvent_free(NetEventHandle *); 
-void NetEvent_pthread_runner(struct NetworkSharedThreadState_t * pnss); 
-void NetEvent_startEventRX(NetEventHandle * nh); 
+struct NetEvent_Handle * NetEvent_new(char * addrstr); 
+void NetEvent_free(struct NetEvent_Handle *); 
+void NetEvent_pthread_runner(struct NetEvent_NetworkSharedThreadState_t * pnss); 
+void NetEvent_startEventRX(struct NetEvent_Handle * nh); 
 
-void NetEvent_stopEventRX(NetEventHandle * nh); 
-int NetEvent_getEvents(NetEventHandle * nh, struct  event_t * etgt, int MAXEVENTS); 
+void NetEvent_stopEventRX(struct NetEvent_Handle * nh); 
+int NetEvent_getEvents(struct NetEvent_Handle * nh,  struct NetEvent_event_t * etgt, int MAXEVENTS, int blocking); 
 
-int NetEvent_sendEvent(NetEventHandle * nh, struct event_t * e, uint8_t *  addrs); 
+int NetEvent_sendEvent(struct NetEvent_Handle * nh, struct NetEvent_event_t * e, uint8_t *  addrs); 
 
-int NetEvent_setMask(NetEventHandle * nh, int src, int cmd); 
-int NetEvent_unsetMask(NetEventHandle * nh, int src, int cmd); 
+int NetEvent_setMask(struct NetEvent_Handle * nh, int src, int cmd); 
+void NetEvent_resetMask(struct NetEvent_Handle * nh); 
+int NetEvent_unsetMask(struct NetEvent_Handle * nh, int src, int cmd); 
 
-#endif //NETEVENT_H
+
+#endif //__SOMA_NETEVENT_H__

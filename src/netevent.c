@@ -1,9 +1,11 @@
-#include "netevent.h"
-#include <errno.h>
 
-void walkEventList(struct eventListItem_t * li)
+#include <pthread.h>
+#include<time.h>
+
+#include "netevent.h"
+void walkEventList(struct NetEvent_eventListItem_t * li)
 {
-  struct eventListItem_t * current = li; 
+  struct NetEvent_eventListItem_t * current = li; 
   //printf("walking list beginning at %d\n", li); 
   while (current != NULL) {
     printf("e.cmd = %d, e.src = %d\n", 
@@ -15,35 +17,40 @@ void walkEventList(struct eventListItem_t * li)
 
 }
 
+uint32_t getEvents(int sock, char * rxValidLUT, 
+		   struct NetEvent_EventList_t * eventlist); 
 
-NetEventHandle * 
+struct NetEvent_Handle * 
 NetEvent_new(char * addrstr)
 {
-  
-  NetEventHandle * nh = malloc(sizeof(NetEventHandle)); 
-  
-  nh->ip = malloc(strlen(addrstr) + 1); 
-  strcpy(nh->ip, addrstr); 
+  struct NetEvent_Handle * nh = malloc(sizeof(struct NetEvent_Handle)); 
+ 
+  strcpy(nh->ip, addrstr); // FIXME possible bufer overflow
 
-  nh->txsocket = 0; 
   nh->txsocket = socket(AF_INET, SOCK_DGRAM, 17); 
-  nh->rxValidLUT = malloc(256*256); 
+
+  nh->rxValidLUT = (char * ) malloc(256*256); 
+
   bzero(nh->rxValidLUT, 256*256); 
 
+  
+
   // now the shared network state
-  nh->pnss = malloc(sizeof(struct NetworkSharedThreadState_t)); 
+  nh->pnss = malloc(sizeof(struct NetEvent_NetworkSharedThreadState_t)); 
+
+
 
   pthread_mutex_init(&(nh->pnss->running_mutex), NULL); 	
   nh->pnss->running = 0; 
 	
   // and the shared network state element list
-  nh->pnss->pel = malloc(sizeof(struct EventList_t)); 
+  nh->pnss->pel = malloc(sizeof(struct NetEvent_EventList_t)); 
   nh->pnss->pel->size = 0; 
 
   pthread_mutex_init(&(nh->pnss->pel->mutex), NULL); 
   pthread_mutex_init(&(nh->pnss->pel->size_mutex), NULL); 
 
-  
+	
   pthread_cond_init(&(nh->pnss->pel->size_thold_cv), NULL); 
 	
        
@@ -51,27 +58,64 @@ NetEvent_new(char * addrstr)
 
   nh->pNetworkThread = malloc(sizeof(pthread_t)); 
   nh->pnss->rxValidLUT = (char * ) malloc(256*256); 
+
   bzero(nh->pnss->rxValidLUT, 256*256); 
 
-  nh->number = 0;
   return nh; 
 }
 
-void NetEvent_free(NetEventHandle * nh )
+int setupRXSocket()
 {
-  // FIXME: I'm pretty sure we leak here! 
-  NetEvent_stopEventRX(nh); 
-  free(nh); 
 
+  int sock; 
+
+  struct sockaddr_in si_me;
+  
+    
+  sock = socket(AF_INET, SOCK_DGRAM, 17); 
+  
+  memset((char *) &si_me, sizeof(si_me), 0);
+
+  si_me.sin_family = AF_INET;
+  si_me.sin_port = htons(EVENTRXPORT); 
+
+  si_me.sin_addr.s_addr = INADDR_ANY; 
+  
+  int optval = 1; 
+
+  // confiugre socket for reuse
+  optval = 1; 
+  int res = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, 
+	     &optval, sizeof (optval)); 
+
+  optval = 1000000; 
+  res = setsockopt (sock, SOL_SOCKET, SO_RCVBUF, 
+		    (const void *) &optval, sizeof(optval)); 
+
+  socklen_t optlen;   
+  res = getsockopt(sock, SOL_SOCKET, SO_RCVBUF, 
+		   (void *) &optval, &optlen); 
+
+  res =  bind(sock, (struct sockaddr*)&si_me, sizeof(si_me)); 
+
+    
+  return sock; 
 }
 
-void pthread_runner(struct NetworkSharedThreadState_t * pnss)
+
+void NetEvent_free(struct NetEvent_Handle * nh )
 {
-  
-  struct EventList_t * pel = pnss->pel; 
+  free(nh->rxValidLUT);
+  free(nh->ip); 
+    
+}
+
+
+void pthread_runner(struct NetEvent_NetworkSharedThreadState_t * pnss)
+{
+  struct NetEvent_EventList_t * pel = pnss->pel; 
   
   int socket = setupRXSocket(); 
-
   pthread_mutex_lock(&(pnss->running_mutex)); 
 
   pnss->running  = 1; 
@@ -82,7 +126,6 @@ void pthread_runner(struct NetworkSharedThreadState_t * pnss)
   char firstLoop = 1; 
   uint32_t rxseq, prevseq =0; 
   char wasrunning; 
-
   while( 1) { 
     pthread_mutex_lock(&(pnss->running_mutex)); 
 
@@ -95,18 +138,21 @@ void pthread_runner(struct NetworkSharedThreadState_t * pnss)
     
     // now use select as a time-out-able interface
     fd_set readfds; 
+    FD_ZERO(&readfds); 
     FD_SET(socket, &readfds); 
     struct timeval timeout; 
     timeout.tv_sec = 1; 
     timeout.tv_usec = 000; 
     int retval = select(socket+1, &readfds, NULL, NULL,  &timeout); 
+    
     if (retval == -1) { 
       printf("Error with select\n"); 
     } else if (retval == 0) {
-      //printf("timeout\n"); 
+      printf("timeout\n"); 
     } else { // at least one FD
       if(FD_ISSET(socket, &readfds) && retval > 0) {
-	struct EventList_t newEventList;
+	
+	struct NetEvent_EventList_t newEventList;
 	newEventList.eltHead = NULL;
 	
 	rxseq  = getEvents(socket, pnss->rxValidLUT, &newEventList);
@@ -114,15 +160,11 @@ void pthread_runner(struct NetworkSharedThreadState_t * pnss)
 	  firstLoop = 0;
 	  prevseq = rxseq -1;
 	} 
-	//printf("rxseq = %8.8x\n", rxseq); 
 	// check for sequential RX
 	if (prevseq + 1 == rxseq ) {
 	  // good
-	  //printf("rx about to acquire size mutex, newEventList.size=%d rxseq = %d\n", newEventList.size, rxseq); 
-	  //printf("about to acquire\n"); 
 	  pthread_mutex_lock(&(pel->size_mutex)); 	
 	  pthread_mutex_lock(&(pel->mutex));
-	  //printf("success\n"); 
 
 	  // if pel is empty, then we append this to it
 	  if (pel->eltHead == NULL) {
@@ -138,7 +180,6 @@ void pthread_runner(struct NetworkSharedThreadState_t * pnss)
 	  if (newEventList.size > 0) 
 	    {	  
 	      pel->size += newEventList.size; 
-	      //printf("added %d to pel, pel.size = %d\n", newEventList.size, pel->size); 
 	    }
 	  
 	  pthread_mutex_unlock(&(pel->mutex));
@@ -151,11 +192,11 @@ void pthread_runner(struct NetworkSharedThreadState_t * pnss)
 	  pthread_mutex_unlock(&(pel->size_mutex)); 	  
 	  
 	} else {
-	  printf("Oops, we dropped one, prevseq = %d, rxseq = %d \n", prevseq, rxseq);
+	  printf("WARNING: packet dropped : prevseq = %d, rxseq = %d \n", prevseq, rxseq);
 	}
 	prevseq = rxseq; 
       } else {
-	printf("ISSET is false\n"); 
+
       }
 
     }
@@ -164,18 +205,27 @@ void pthread_runner(struct NetworkSharedThreadState_t * pnss)
 
 }
 
-void 
-NetEvent_startEventRX(NetEventHandle * nh)
+void NetEvent_resetMask(struct NetEvent_Handle * nh)
 {
-  int i = 0; 
-  // build the constant-time LUT
+  int i = 0;
+  for (i = 0; i < 256*256; i++) {
+    nh->rxValidLUT[i] = 0; 
+  }
+
+}
+
+
+void 
+NetEvent_startEventRX(struct NetEvent_Handle * nh)
+{
+   // now we fork a thread and begin queueing up events
+
   // copy from network handle
+  int i; 
    for (i = 0; i < 256 * 256; i++) {
-    //nh->pnss->rxValidLUT[cmd + src*256] = 1; 
     nh->pnss->rxValidLUT[i] = nh->rxValidLUT[i]; 
   }
   
-  // now we fork a thread and begin queueing up events
 
   pthread_create((void*)&(nh->pNetworkThread), NULL, 
 		 (void *)pthread_runner, nh->pnss); 
@@ -187,13 +237,12 @@ NetEvent_startEventRX(NetEventHandle * nh)
     oldrunning = nh->pnss->running; 
     pthread_mutex_unlock(&(nh->pnss->running_mutex)); 
   }
-  
+   
 }
 
 void 
-NetEvent_stopEventRX(NetEventHandle * nh)
+NetEvent_StopEventRX(struct NetEvent_Handle * nh)
 {
-
   pthread_mutex_lock(&(nh->pnss->running_mutex)); 
   nh->pnss->running = 0; 
   pthread_mutex_unlock(&(nh->pnss->running_mutex)); 
@@ -204,10 +253,10 @@ NetEvent_stopEventRX(NetEventHandle * nh)
 	  
   pthread_mutex_lock(&(nh->pnss->pel->mutex));
 
-  struct EventList_t * pel = nh->pnss->pel; 
-  struct eventListItem_t * p = pel->eltHead; 
+  struct NetEvent_EventList_t * pel = nh->pnss->pel; 
+  struct NetEvent_eventListItem_t * p = pel->eltHead; 
   while (p != NULL) {
-    struct eventListItem_t * nextp = p->elt; 
+    struct NetEvent_eventListItem_t * nextp = p->elt; 
     free(p); 
     p = nextp; 
   }
@@ -218,11 +267,13 @@ NetEvent_stopEventRX(NetEventHandle * nh)
   pthread_mutex_lock(&(pel->size_mutex)); 
   pel->size =0; 
   pthread_mutex_unlock(&(pel->size_mutex)); 
+  
 
 }
 
-int 
-NetEvent_getEvents(NetEventHandle * nh, struct event_t * etgt, int MAXEVENTS)
+int
+NetEvent_getEvents(struct NetEvent_Handle * nh, struct NetEvent_event_t * etgt, 
+		   int MAXEVENTS, int blocking)
 {
   /*
     return up to MAXEVENTS in the event_t array passed as etgt. 
@@ -230,50 +281,49 @@ NetEvent_getEvents(NetEventHandle * nh, struct event_t * etgt, int MAXEVENTS)
     return value is number of events, or -1 if error
   */
   
-  struct EventList_t * pel = nh->pnss->pel; 
 
-  // check the size
-  //printf("pre-size is %d\n",  pel->size); 
-	   
-   
+  struct NetEvent_EventList_t * pel = nh->pnss->pel; 
+
+  
   pthread_mutex_lock(&(pel->size_mutex)) ;
-/*   printf("PyNetEvent_getEvents(PyNetEvent* nh): size is %d\n",   */
-/*  	  pel->size);   */
-  if (pel->size == 0 ) {
-    struct timespec timeWait; 
-    struct timeval timeNow; 
-    gettimeofday(&timeNow, NULL);
-    timeWait.tv_sec = timeNow.tv_sec + 1; 
-    timeWait.tv_nsec = timeNow.tv_usec; 
-    
-    // use cond_timedwait to periodically pass control back
-    // so we can receive control-C and other signals
-    int res = pthread_cond_timedwait(&(pel->size_thold_cv), 
-				     &(pel->size_mutex), &timeWait); 
-    if (res == ETIMEDOUT) {
-      pthread_mutex_unlock(&(pel->size_mutex)); 
-      //printf("timeout?\n"); 
-      return NETEVENT_EGETEVENTS; 
 
+  if (pel->size == 0 ) {
+    if (!blocking) {
+      // nonblocking call, return none
+      pthread_mutex_unlock(&(pel->size_mutex)); 
+      return 0; 
+    } else { 
+      struct timespec timeWait; 
+      struct timeval tp; 
+
+      gettimeofday(&tp, NULL); 
+      int delay = 1; 
+      timeWait.tv_sec = tp.tv_sec + delay; 
+      timeWait.tv_nsec =  tp.tv_usec * 1000; 
+      
+      // use cond_timedwait to periodically pass control pack to python
+      // interpreter so we can receive control-C and other signals
+      int res = pthread_cond_timedwait(&(pel->size_thold_cv), 
+				       &(pel->size_mutex), &timeWait); 
+      if (res != 0 ) { // FIXME NEED BETTER ERROR HANDLING, WHERE THE HELL IS ETIMEDOUT
+	pthread_mutex_unlock(&(pel->size_mutex)); 
+	return 0; 
+      }
     }
   }
-
-  //printf("post-size is %d\n",  pel->size); 
-	   
-
+  
   pthread_mutex_lock(&(pel->mutex)); 
 
-  struct eventListItem_t * phead = pel->eltHead; 
+  struct NetEvent_eventListItem_t * phead = pel->eltHead; 
 
 
   int pos = 0; 
 
   while(phead != NULL && pos < MAXEVENTS) {
-    struct eventListItem_t * curhead = phead; 
-    
+    struct NetEvent_eventListItem_t * curhead = phead; 
     //PyObject * outtuple = eventToPyTuple(&(curhead->e)); 
     //PyList_Append(outlist, outtuple); 
-    memcpy(etgt +  pos, &(curhead->e), sizeof(struct event_t));     
+    memcpy(etgt +  pos, &(curhead->e), sizeof(struct NetEvent_event_t));     
 
     pos += 1; 
     phead = curhead->elt; 
@@ -281,6 +331,7 @@ NetEvent_getEvents(NetEventHandle * nh, struct event_t * etgt, int MAXEVENTS)
     pel->size -= 1; 
     free(curhead); 
   }
+
   if (pel->eltHead == NULL) {
     pel->eltTail = NULL; 
   }
@@ -288,21 +339,14 @@ NetEvent_getEvents(NetEventHandle * nh, struct event_t * etgt, int MAXEVENTS)
   pthread_mutex_unlock(&(pel->mutex)); 
   pthread_mutex_unlock(&(pel->size_mutex)); 
 
-
   return pos; 
 
-  
 }
 
 int 
-NetEvent_sendEvent(NetEventHandle * nh, struct event_t * e, uint8_t *  addrs)
+NetEvent_sendEvent(struct NetEvent_Handle * nh,  struct NetEvent_event_t * e, 
+		   uint8_t *  addrs)
 {
-  /* 
-     e is a pointer to an event to send
-     addrs is a pointer to a uint8[10] array of event addresses
-     
-     return ESENDERROR on failure, 0 otherwise
-  */
 
   struct sockaddr_in saServer; 
   
@@ -310,7 +354,7 @@ NetEvent_sendEvent(NetEventHandle * nh, struct event_t * e, uint8_t *  addrs)
   memset(&saServer, sizeof(saServer), 0); 
   saServer.sin_family = AF_INET; 
   saServer.sin_port = htons(EVENTTXPORT);  
-  
+
   inet_aton(nh->ip, &saServer.sin_addr); 
   // construct nonce
   
@@ -363,25 +407,27 @@ NetEvent_sendEvent(NetEventHandle * nh, struct event_t * e, uint8_t *  addrs)
   uint16_t nrxnonce, hrxnonce; 
 
   while (! success) {
-    //printf("sendto\n"); 
     sendto(sock, buffer, bpos, 0, 
 	   (struct sockaddr*)&saServer, sizeof(saServer)); 
     
     bzero(buffer, 1500); 
 
     fd_set readfds; 
+    FD_ZERO(&readfds); 
     FD_SET(sock, &readfds); 
     struct timeval timeout; 
-    timeout.tv_sec = 1; 
-    timeout.tv_usec = 0; 
+    timeout.tv_sec = 0; 
+    timeout.tv_usec = 20000; 
     int retval = select(sock+1, &readfds, NULL, NULL,  &timeout); 
 
     if (retval == -1) { 
-      // Error in select waiting for EventTX response from soma
-      return NETEVENT_ESENDERROR; 
+      //PyErr_SetString(PyExc_IOError, "Error in select waiting for EventTX response from soma");  
+      // FIXME better error handling
+      return 0; 
     } else if (retval == 0) {
-      // Timed out waiting for EventTX response from soma
-      return NETEVENT_ESENDERROR_TIMEOUT; 
+      // FIXME better error handling 
+      //PyErr_SetString(PyExc_IOError, "Timed out waiting for EventTX response from soma");       
+      return 0; 
     }
 
     int rxlen = recv(sock, buffer, 1500, 0); 
@@ -405,54 +451,29 @@ NetEvent_sendEvent(NetEventHandle * nh, struct event_t * e, uint8_t *  addrs)
     if (!success || !noncesuccess) {
       printf("TX Response failed! success = %d, sentnonce = %4.4X, rxnonce = %4.4X\n",
 	     success, hnonce, hrxnonce); 
-      return NETEVENT_ESENDERROR; 
     }
   }
+  return 0;  // FIXME we really need good status checking
 
-  return NETEVENT_SUCCESS;  
+
 }
 
-
-int setupRXSocket()
+int 
+NetEvent_setMask(struct NetEvent_Handle * nh, int src, int cmd)
 {
+  nh->rxValidLUT[cmd + src * 256] = 1; 
+  return 0; 
+}
 
-  int sock; 
-
-  struct sockaddr_in si_me;
-  
-    
-  sock = socket(AF_INET, SOCK_DGRAM, 17); 
-  
-  memset((char *) &si_me, sizeof(si_me), 0);
-
-  si_me.sin_family = AF_INET;
-  si_me.sin_port = htons(EVENTRXPORT); 
-
-  si_me.sin_addr.s_addr = INADDR_ANY; 
-  
-  int optval = 1; 
-
-  // confiugre socket for reuse
-  optval = 1; 
-  int res = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, 
-	     &optval, sizeof (optval)); 
-
-  optval = 4000000; 
-  res = setsockopt (sock, SOL_SOCKET, SO_RCVBUF, 
-		    (const void *) &optval, sizeof(optval)); 
-
-  socklen_t optlen;   
-  res = getsockopt(sock, SOL_SOCKET, SO_RCVBUF, 
-		   (void *) &optval, &optlen); 
-
-  res =  bind(sock, (struct sockaddr*)&si_me, sizeof(si_me)); 
-
-    
-  return sock; 
+int 
+NetEvent_unsetMask(struct NetEvent_Handle * nh, int src, int cmd)
+{
+  nh->rxValidLUT[cmd + src * 256] = 0; 
+  return 0; 
 }
 
 uint32_t getEvents(int sock, char * rxValidLUT, 
-		   struct EventList_t * eventlist)
+		   struct NetEvent_EventList_t * eventlist)
 {
   /*
     returns the sequence number for us to "deal with"
@@ -477,7 +498,7 @@ uint32_t getEvents(int sock, char * rxValidLUT,
   
   size_t bpos = 4; 
   
-  struct eventListItem_t * curelt = NULL;
+  struct NetEvent_eventListItem_t * curelt = NULL;
   int addedcnt = 0; 
 
   int totalevents = 0;
@@ -493,7 +514,7 @@ uint32_t getEvents(int sock, char * rxValidLUT,
       for (evtnum = 0; evtnum < eventlen; evtnum++)
 	{
 	  // extract out individual events
-	  struct event_t evt;
+	  struct NetEvent_event_t evt;
 	  evt.cmd = buffer[bpos];
 	  bpos++;
 	  
@@ -513,11 +534,11 @@ uint32_t getEvents(int sock, char * rxValidLUT,
 	  
 	  // now, is this one of ours?
  	  if (rxValidLUT[evt.cmd + evt.src*256] != 0) { 
-
+	    
  	    // now we add the thing 
-	    struct eventListItem_t * newelt; 
-	    newelt = malloc(sizeof(struct eventListItem_t)); 
-	    bzero(newelt, sizeof(struct eventListItem_t)); 
+	    struct NetEvent_eventListItem_t * newelt; 
+	    newelt = malloc(sizeof(struct NetEvent_eventListItem_t)); 
+	    bzero(newelt, sizeof(struct NetEvent_eventListItem_t)); 
 	    newelt->elt = NULL; 
 	    if (curelt == NULL ) {
 	      eventlist->eltHead = newelt; 
@@ -532,29 +553,16 @@ uint32_t getEvents(int sock, char * rxValidLUT,
 	    }
 	    addedcnt += 1; 
 	    curelt->e = evt;
+ 	  } else {
+
 	  }
-	
+	  
 	}
     }
-  eventlist->size = addedcnt; 
-  //printf("getEvents: Total events: %d\n", totalevents); 
+  eventlist->size = addedcnt;  // the input list is always empty, 
+  // so we can just set the size
   return seq;
   
 }
 
 
-int NetEvent_setMask(NetEventHandle * nh, int src, int cmd)
-{
-  int i; 
-    //nh->pnss->rxValidLUT[cmd + src*256] = 1; 
-  int offset = cmd + src * 256; 
-
-  nh->rxValidLUT[cmd + src * 256] = 1; 
-}
-
-int NetEvent_unsetMask(NetEventHandle * nh, int src, int cmd)
-{
-  nh->rxValidLUT[cmd + src * 256] = 0; 
-
-
-}

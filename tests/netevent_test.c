@@ -9,14 +9,14 @@ int main()
   int started = 0; 
   
   const int MAXEVENT = 4; 
-  struct event_t eh[MAXEVENT]; 
+  struct NetEvent_event_t eh[MAXEVENT]; 
 
-  NetEventHandle * pnh = NetEvent_new("10.0.0.2"); 
+  struct NetEvent_Handle * pnh = NetEvent_new("10.0.0.2"); 
   NetEvent_setMask(pnh, 0, 0x10); 
   NetEvent_startEventRX(pnh); 
   
   for (i = 0; i < 1000; i++) {
-    n = NetEvent_getEvents(pnh, eh, MAXEVENT); 
+    n = NetEvent_getEvents(pnh, eh, MAXEVENT, 1); 
     
     //printf("received n = %d events\n", n); 
     for (j = 0; j < n; j++) {
@@ -28,7 +28,7 @@ int main()
 	}
       }
       val = eh[j].data[2]; 
-	
+      printf("received %4.4X\n", eh[j].data[2]); 
     }
   }
 }

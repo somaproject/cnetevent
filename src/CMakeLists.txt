@@ -8,6 +8,9 @@ ADD_LIBRARY(somanetevent SHARED
   ${somanetevent_SRCS}
 )
 
+target_link_libraries(somanetevent
+  pthread
+)
 SET_TARGET_PROPERTIES(somanetevent
   PROPERTIES VERSION ${LIBRARY_VERSION}
   SOVERSION ${LIBRARY_SOVERSION})
