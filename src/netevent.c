@@ -241,7 +241,7 @@ NetEvent_startEventRX(struct NetEvent_Handle * nh)
 }
 
 void 
-NetEvent_StopEventRX(struct NetEvent_Handle * nh)
+NetEvent_stopEventRX(struct NetEvent_Handle * nh)
 {
   pthread_mutex_lock(&(nh->pnss->running_mutex)); 
   nh->pnss->running = 0; 
