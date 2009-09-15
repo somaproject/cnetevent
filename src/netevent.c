@@ -92,7 +92,8 @@ int setupRXSocket()
   res = setsockopt (sock, SOL_SOCKET, SO_RCVBUF, 
 		    (const void *) &optval, sizeof(optval)); 
 
-  socklen_t optlen;   
+  socklen_t optlen = sizeof(optval); 
+
   res = getsockopt(sock, SOL_SOCKET, SO_RCVBUF, 
 		   (void *) &optval, &optlen); 
 
@@ -105,9 +106,14 @@ int setupRXSocket()
 
 void NetEvent_free(struct NetEvent_Handle * nh )
 {
+
+  free(nh->pnss->pel); 
+  free(nh->pnss->rxValidLUT); 
+  free(nh->pnss); 
+  free(nh->pNetworkThread); 
   free(nh->rxValidLUT);
-  free(nh->ip); 
-    
+
+  free(nh); 
 }
 
 
@@ -227,7 +233,7 @@ NetEvent_startEventRX(struct NetEvent_Handle * nh)
   }
   
 
-  pthread_create((void*)&(nh->pNetworkThread), NULL, 
+  pthread_create(nh->pNetworkThread, NULL, 
 		 (void *)pthread_runner, nh->pnss); 
 
   char oldrunning = 0; 

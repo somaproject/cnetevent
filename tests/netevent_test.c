@@ -15,7 +15,7 @@ int main()
   NetEvent_setMask(pnh, 0, 0x10); 
   NetEvent_startEventRX(pnh); 
   
-  for (i = 0; i < 1000; i++) {
+  for (i = 0; i < 10; i++) {
     n = NetEvent_getEvents(pnh, eh, MAXEVENT, 1); 
     
     //printf("received n = %d events\n", n); 
@@ -31,4 +31,8 @@ int main()
       printf("received %4.4X\n", eh[j].data[2]); 
     }
   }
+
+  NetEvent_stopEventRX(pnh); 
+  NetEvent_free(pnh); 
+
 }
