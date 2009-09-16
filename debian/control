@@ -1,9 +1,9 @@
 Source: soma-cnetevent
-Section: unknown
+Section: extra
 Priority: extra
 Maintainer: slayton <slayton@stockton-mini>
-Build-Depends: debhelper (>= 7), autotools-dev
-Standards-Version: 3.7.3
+Build-Depends: debhelper (>= 7), autotools-dev, cdbs, cmake
+Standards-Version: 3.8.0
 Homepage: http://soma.mit.edu
 
 Package: soma-cnetevent

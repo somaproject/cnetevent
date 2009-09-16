@@ -1,6 +1,7 @@
-cnetevent (1.0-1) unstable; urgency=low
+soma-cnetevent (0.9~somatesting-jaunty-github-090916-1) jaunty; urgency=low
 
-  * Initial release (Closes: #nnnn)  <nnnn is the bug number of your ITP>
+  * initial release into somatesting
 
- -- slayton <slayton@stockton-mini>  Sat, 08 Nov 2008 12:56:16 -0500
+ -- Stuart Layton <slayton@mit.edu>  Wed, 16 Sep 2009 10:08:42 -0400
+
 
